@@ -81,11 +81,14 @@ def split_text(text: str, size: int) -> list[str]:
     return chunks
 
 
-def build_embeds(title, chunks, color, source_name, monospace):
+def build_embeds(title, chunks, color, source_name, monospace, truncated=False):
     embeds = []
     total = len(chunks)
     for i, chunk in enumerate(chunks, 1):
         desc = f"```\n{chunk}\n```" if monospace else chunk
+        if truncated and i == total:
+            # added after the code block so the italics render in --monospace mode
+            desc += "\n\n_…truncated. Full report attached._"
         embed = {"description": desc[:DESC_LIMIT], "color": color}
         if i == 1:
             embed["title"] = title[:256]
@@ -188,18 +191,19 @@ def main():
 
     chunk_size = CHUNK_SIZE - (8 if args.monospace else 0)
     chunks = split_text(text, chunk_size)
-    if args.max_parts > 0 and len(chunks) > args.max_parts:
+    truncated = args.max_parts > 0 and len(chunks) > args.max_parts
+    if truncated:
         chunks = chunks[:args.max_parts]
-        chunks[-1] += "\n\n_…truncated. Full report attached._"
 
     # 2. Build embeds and group them into messages
     embeds = build_embeds(args.title or path.stem, chunks, parse_color(args.color),
-                          path.name, args.monospace)
+                          path.name, args.monospace, truncated)
     messages = group_into_messages(embeds)
 
     # 3. Work out attachments for the first message
     first_files = []
-    tmpdir = tempfile.mkdtemp()
+    tmp = tempfile.TemporaryDirectory()  # removed automatically when the script exits
+    tmpdir = tmp.name
     if args.preview:
         if path.suffix.lower() == ".pdf":
             png = render_first_page(path, Path(tmpdir) / "preview.png")
